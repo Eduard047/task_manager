@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from PySide6.QtCore import QDir
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication, QMessageBox
 
@@ -15,6 +16,9 @@ def load_styles(app: QApplication) -> None:
     qss_path = Path(__file__).resolve().parent / "ui" / "styles.qss"
     if not qss_path.exists():
         return
+    assets_dir = qss_path.parent / "assets"
+    if assets_dir.exists():
+        QDir.addSearchPath("assets", str(assets_dir.resolve()))
     app.setStyleSheet(qss_path.read_text(encoding="utf-8"))
 
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QListWidgetItem, QVBoxLayout
 
 from app.domain.enums import TaskStatus
@@ -48,7 +48,7 @@ class KanbanDialog(QDialog):
                 list_widget.addItem(item)
                 item.setData(Qt.UserRole, task.id)
                 widget = TaskItemWidget(task)
-                item.setSizeHint(widget.sizeHint())
+                item.setSizeHint(QSize(0, widget.sizeHint().height()))
                 list_widget.setItemWidget(item, widget)
 
     def on_drop_status(self, task_id: int, status_key: str) -> None:

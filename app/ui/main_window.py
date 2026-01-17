@@ -4,7 +4,7 @@ import csv
 from datetime import date, datetime
 from pathlib import Path
 
-from PySide6.QtCore import QDate, Qt
+from PySide6.QtCore import QDate, QSize, Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QCalendarWidget,
@@ -18,7 +18,9 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidgetItem,
     QMessageBox,
+    QAbstractSpinBox,
     QPushButton,
+    QSizePolicy,
     QSpinBox,
     QSplitter,
     QTextEdit,
@@ -270,8 +272,10 @@ class MainWindow(QWidget):
         self.title_input.setPlaceholderText("Назва задачі")
 
         self.description_input = QTextEdit()
+        self.description_input.setObjectName("DescriptionInput")
         self.description_input.setPlaceholderText("Опис, чекліст, контекст")
-        self.description_input.setFixedHeight(140)
+        self.description_input.setMinimumHeight(120)
+        self.description_input.setMaximumHeight(140)
 
         self.status_combo = QComboBox()
         for label, key in STATUS_OPTIONS:
@@ -287,6 +291,7 @@ class MainWindow(QWidget):
         self.due_toggle = QPushButton("Дедлайн вимкнено")
         self.due_toggle.setCheckable(True)
         self.due_toggle.setProperty("variant", "secondary")
+        self.due_toggle.setObjectName("DueToggle")
         self.due_toggle.toggled.connect(self.on_due_toggled)
 
         self.due_input = QDateEdit()
@@ -305,6 +310,7 @@ class MainWindow(QWidget):
         self.recurrence_interval.setRange(1, 30)
         self.recurrence_interval.setValue(1)
         self.recurrence_interval.setSuffix("x")
+        self.recurrence_interval.setButtonSymbols(QAbstractSpinBox.UpDownArrows)
 
         self.recurrence_end_check = QCheckBox("Кінець повтору")
         self.recurrence_end_check.toggled.connect(self.on_recurrence_end_toggled)
@@ -333,6 +339,8 @@ class MainWindow(QWidget):
         layout.addWidget(self.title_input)
         layout.addWidget(self.description_input)
 
+        layout.addSpacing(6)
+
         layout.addWidget(QLabel("Статус"))
         layout.addWidget(self.status_combo)
 
@@ -353,9 +361,13 @@ class MainWindow(QWidget):
         layout.addWidget(self.recurrence_end_date)
 
         actions = QHBoxLayout()
-        actions.addWidget(self.save_button)
-        actions.addWidget(self.done_button)
-        actions.addWidget(self.archive_button)
+        actions.setSpacing(8)
+        self.save_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.done_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.archive_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        actions.addWidget(self.save_button, 1)
+        actions.addWidget(self.done_button, 1)
+        actions.addWidget(self.archive_button, 1)
         layout.addLayout(actions)
         layout.addWidget(self.delete_button)
         layout.addStretch()
@@ -376,7 +388,7 @@ class MainWindow(QWidget):
             item = QListWidgetItem()
             item.setData(Qt.UserRole, task.id)
             widget = TaskItemWidget(task)
-            item.setSizeHint(widget.sizeHint())
+            item.setSizeHint(QSize(0, widget.sizeHint().height()))
             self.task_list.addItem(item)
             self.task_list.setItemWidget(item, widget)
 
@@ -477,6 +489,8 @@ class MainWindow(QWidget):
             self.recurrence_end_check.setChecked(False)
             self.recurrence_end_date.setEnabled(False)
 
+        self._sync_done_button(task)
+
     def clear_form(self) -> None:
         self.title_input.clear()
         self.description_input.clear()
@@ -491,6 +505,24 @@ class MainWindow(QWidget):
         self.recurrence_end_check.setChecked(False)
         self.recurrence_end_date.setEnabled(False)
         self.recurrence_end_date.setDate(QDate.currentDate())
+        self._sync_done_button(None)
+
+    def _sync_done_button(self, task: TaskEntity | None) -> None:
+        if task is None:
+            self.done_button.setEnabled(False)
+            self.done_button.setText("Позначити виконаною")
+            self.done_button.setProperty("variant", "secondary")
+        elif task.status == TaskStatus.DONE:
+            self.done_button.setEnabled(True)
+            self.done_button.setText("Повернути в роботу")
+            self.done_button.setProperty("variant", "warning")
+        else:
+            self.done_button.setEnabled(True)
+            self.done_button.setText("Позначити виконаною")
+            self.done_button.setProperty("variant", "secondary")
+
+        self.done_button.style().unpolish(self.done_button)
+        self.done_button.style().polish(self.done_button)
 
     def new_task(self) -> None:
         self.current_task_id = None
@@ -536,7 +568,13 @@ class MainWindow(QWidget):
     def mark_done(self) -> None:
         if self.current_task_id is None:
             return
-        self.service.mark_done(self.current_task_id)
+        task = self._get_task_from_list(self.current_task_id)
+        if task is None:
+            task = self.service.get_task(self.current_task_id)
+        if task and task.status == TaskStatus.DONE:
+            self.service.update_task(self.current_task_id, {"status": TaskStatus.IN_PROGRESS.value})
+        else:
+            self.service.mark_done(self.current_task_id)
         self.refresh_tasks()
         self._auto_export_ics()
 

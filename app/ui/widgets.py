@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from PySide6.QtCore import QMimeData, Qt
 from PySide6.QtGui import QDrag
-from PySide6.QtWidgets import QAbstractItemView, QHBoxLayout, QLabel, QListWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 
 from app.domain.entities import TaskEntity
 
@@ -47,12 +55,18 @@ class TaskItemWidget(QWidget):
         super().__init__()
         self.task = task
 
+        self.setObjectName("TaskCard")
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 8, 12, 8)
         layout.setSpacing(4)
 
         title = QLabel(task.title)
         title.setProperty("class", "task-title")
+        title.setWordWrap(True)
+        title.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
         meta_parts = []
         if task.due_date:
@@ -66,8 +80,10 @@ class TaskItemWidget(QWidget):
         if status_label:
             meta_parts.append(f"Статус: {status_label}")
 
-        meta = QLabel(" • ".join(meta_parts) if meta_parts else "Без деталей")
+        meta = QLabel(" | ".join(meta_parts) if meta_parts else "Без деталей")
         meta.setProperty("class", "task-meta")
+        meta.setWordWrap(True)
+        meta.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
         priority_label = next(
             (label for label, value in PRIORITY_OPTIONS if value == task.priority),
@@ -78,6 +94,7 @@ class TaskItemWidget(QWidget):
         priority.setStyleSheet(
             f"background-color: {PRIORITY_COLORS.get(task.priority, '#9CA3AF')};"
         )
+        priority.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
         header = QHBoxLayout()
         header.addWidget(title)
@@ -96,6 +113,8 @@ class TaskListWidget(QListWidget):
         self.setAcceptDrops(True)
         self.setDropIndicatorShown(True)
         self.setDragDropMode(QAbstractItemView.InternalMove)
+        self.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
     def startDrag(self, supportedActions: Qt.DropActions) -> None:  # type: ignore[name-defined]
         item = self.currentItem()
@@ -163,6 +182,8 @@ class KanbanListWidget(QListWidget):
         self.setDragEnabled(True)
         self.setDropIndicatorShown(True)
         self.setDragDropMode(QAbstractItemView.InternalMove)
+        self.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
     def startDrag(self, supportedActions: Qt.DropActions) -> None:  # type: ignore[name-defined]
         item = self.currentItem()

@@ -1,20 +1,35 @@
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from dotenv import load_dotenv
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+def _resolve_project_root() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parents[1]
+
+
+PROJECT_ROOT = _resolve_project_root()
 
 
 def load_env() -> None:
     env_name = os.getenv("APP_ENV", "development")
-    load_dotenv(PROJECT_ROOT / ".env")
-    env_specific = PROJECT_ROOT / f".env.{env_name}"
-    if env_specific.exists():
-        load_dotenv(env_specific, override=True)
+    candidates = [Path.cwd(), PROJECT_ROOT]
+    for base in candidates:
+        env_path = base / ".env"
+        if env_path.exists():
+            load_dotenv(env_path)
+            break
+
+    for base in candidates:
+        env_specific = base / f".env.{env_name}"
+        if env_specific.exists():
+            load_dotenv(env_specific, override=True)
+            break
 
 
 @dataclass(frozen=True)
