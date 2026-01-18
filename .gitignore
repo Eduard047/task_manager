@@ -22,3 +22,8 @@ Thumbs.db
 
 # Logs
 logs/
+
+# Build artifacts
+build/
+dist/
+*.spec
