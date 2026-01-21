@@ -24,3 +24,14 @@ class TaskEntity:
     recurrence_end_date: Optional[date]
     archived_at: Optional[datetime]
     sort_order: int
+
+
+@dataclass(frozen=True)
+class SubtaskEntity:
+    id: int | None
+    task_id: int
+    title: str
+    is_done: bool
+    created_at: datetime
+    updated_at: datetime
+    sort_order: int

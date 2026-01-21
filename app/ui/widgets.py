@@ -1,18 +1,21 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QMimeData, Qt
+from PySide6.QtCore import QMimeData, QSize, Qt
 from PySide6.QtGui import QDrag
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidget,
+    QPushButton,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
 
-from app.domain.entities import TaskEntity
+from app.domain.entities import SubtaskEntity, TaskEntity
 
 STATUS_LABELS = {
     "inbox": "Вхідні",
@@ -51,21 +54,24 @@ def _task_id_from_mime(mime: QMimeData) -> int | None:
 
 
 class TaskItemWidget(QWidget):
-    def __init__(self, task: TaskEntity):
+    def __init__(self, task: TaskEntity, subtask_titles: list[str] | None = None):
         super().__init__()
         self.task = task
 
         self.setObjectName("TaskCard")
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setMinimumHeight(64)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 8, 12, 8)
         layout.setSpacing(4)
 
-        title = QLabel(task.title)
+        title_text = task.title.strip() if task.title else "Без назви"
+        title = QLabel(title_text)
         title.setProperty("class", "task-title")
         title.setWordWrap(True)
+        title.setMinimumWidth(0)
         title.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
         meta_parts = []
@@ -73,16 +79,21 @@ class TaskItemWidget(QWidget):
             meta_parts.append(f"Дедлайн: {task.due_date.strftime('%d.%m.%Y')}")
         if task.tags:
             meta_parts.append(f"Теги: {task.tags}")
-        status_label = STATUS_LABELS.get(
-            task.status.value if hasattr(task.status, "value") else str(task.status),
-            "",
-        )
+        if subtask_titles:
+            numbered = [
+                f"{index}) {title}" for index, title in enumerate(subtask_titles, start=1)
+            ]
+            meta_parts.append(f"Підзадачі: {'; '.join(numbered)}")
+
+        status_value = task.status.value if hasattr(task.status, "value") else str(task.status or "")
+        status_label = STATUS_LABELS.get(status_value, status_value)
         if status_label:
             meta_parts.append(f"Статус: {status_label}")
 
         meta = QLabel(" | ".join(meta_parts) if meta_parts else "Без деталей")
         meta.setProperty("class", "task-meta")
         meta.setWordWrap(True)
+        meta.setMinimumWidth(0)
         meta.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
         priority_label = next(
@@ -97,24 +108,123 @@ class TaskItemWidget(QWidget):
         priority.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
         header = QHBoxLayout()
-        header.addWidget(title)
-        header.addStretch()
-        header.addWidget(priority)
+        header.setSpacing(8)
+        header.addWidget(title, 1)
+        header.addWidget(priority, 0, Qt.AlignTop)
 
         layout.addLayout(header)
         layout.addWidget(meta)
+
+    def set_selected(self, selected: bool) -> None:
+        self.setProperty("selected", selected)
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+
+class TaskItemContainer(QWidget):
+    def __init__(self, task_widget: TaskItemWidget, h_margin: int = 12, parent=None):
+        super().__init__(parent)
+        self.task_widget = task_widget
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(h_margin, 0, h_margin, 0)
+        layout.setSpacing(0)
+        layout.addWidget(task_widget)
+
+    @property
+    def task(self) -> TaskEntity:
+        return self.task_widget.task
+
+    def set_selected(self, selected: bool) -> None:
+        self.task_widget.set_selected(selected)
+
+
+class SubtaskItemWidget(QWidget):
+    def __init__(self, subtask: SubtaskEntity, on_toggle, on_title_update, on_delete, parent=None):
+        super().__init__(parent)
+        self.subtask_id = subtask.id
+        self._title_value = subtask.title
+        self._on_toggle = on_toggle
+        self._on_title_update = on_title_update
+        self._on_delete = on_delete
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        self.done_check = QCheckBox()
+        self.done_check.setChecked(subtask.is_done)
+        self.done_check.toggled.connect(self._handle_toggle)
+
+        self.title_input = QLineEdit(subtask.title)
+        self.title_input.setPlaceholderText("Subtask title")
+        self.title_input.editingFinished.connect(self._handle_title_commit)
+
+        self.delete_button = QPushButton("Remove")
+        self.delete_button.setProperty("variant", "ghost")
+        self.delete_button.clicked.connect(self._handle_delete)
+
+        layout.addWidget(self.done_check)
+        layout.addWidget(self.title_input, 1)
+        layout.addWidget(self.delete_button)
+
+    def _handle_toggle(self, checked: bool) -> None:
+        if self.subtask_id is None:
+            return
+        self._on_toggle(self.subtask_id, checked)
+
+    def _handle_title_commit(self) -> None:
+        if self.subtask_id is None:
+            return
+        title = self.title_input.text().strip()
+        if not title:
+            self.title_input.setText(self._title_value)
+            return
+        if title != self._title_value:
+            self._title_value = title
+            self._on_title_update(self.subtask_id, title)
+
+    def _handle_delete(self) -> None:
+        if self.subtask_id is None:
+            return
+        self._on_delete(self.subtask_id)
 
 
 class TaskListWidget(QListWidget):
     def __init__(self, on_reorder=None, parent=None):
         super().__init__(parent)
         self._on_reorder = on_reorder
+        self._h_margin = 12
+        self._v_margin = 8
         self.setDragEnabled(True)
         self.setAcceptDrops(True)
         self.setDropIndicatorShown(True)
         self.setDragDropMode(QAbstractItemView.InternalMove)
         self.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._update_viewport_margins()
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self.sync_item_sizes()
+
+    def _update_viewport_margins(self) -> None:
+        scrollbar_width = self.verticalScrollBar().width() or self.verticalScrollBar().sizeHint().width()
+        right_margin = self._h_margin + (scrollbar_width if self.verticalScrollBar().isVisible() else 0)
+        self.setViewportMargins(self._h_margin, self._v_margin, right_margin, self._v_margin)
+
+    def sync_item_sizes(self) -> None:
+        self._update_viewport_margins()
+        viewport_width = self.viewport().width()
+        for index in range(self.count()):
+            item = self.item(index)
+            widget = self.itemWidget(item)
+            if widget:
+                widget.setMinimumWidth(viewport_width)
+                widget.setMaximumWidth(viewport_width)
+                widget.adjustSize()
+                hint = widget.sizeHint()
+                item.setSizeHint(QSize(viewport_width, hint.height()))
+                widget.resize(viewport_width, hint.height())
 
     def startDrag(self, supportedActions: Qt.DropActions) -> None:  # type: ignore[name-defined]
         item = self.currentItem()
@@ -178,12 +288,38 @@ class KanbanListWidget(QListWidget):
         self.status_key = status_key
         self._on_drop_status = on_drop_status
         self._on_reorder = on_reorder
+        self._h_margin = 12
+        self._v_margin = 10
         self.setAcceptDrops(True)
         self.setDragEnabled(True)
         self.setDropIndicatorShown(True)
         self.setDragDropMode(QAbstractItemView.InternalMove)
         self.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._update_viewport_margins()
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self.sync_item_sizes()
+
+    def _update_viewport_margins(self) -> None:
+        scrollbar_width = self.verticalScrollBar().width() or self.verticalScrollBar().sizeHint().width()
+        right_margin = self._h_margin + (scrollbar_width if self.verticalScrollBar().isVisible() else 0)
+        self.setViewportMargins(self._h_margin, self._v_margin, right_margin, self._v_margin)
+
+    def sync_item_sizes(self) -> None:
+        self._update_viewport_margins()
+        viewport_width = self.viewport().width()
+        for index in range(self.count()):
+            item = self.item(index)
+            widget = self.itemWidget(item)
+            if widget:
+                widget.setMinimumWidth(viewport_width)
+                widget.setMaximumWidth(viewport_width)
+                widget.adjustSize()
+                hint = widget.sizeHint()
+                item.setSizeHint(QSize(viewport_width, hint.height()))
+                widget.resize(viewport_width, hint.height())
 
     def startDrag(self, supportedActions: Qt.DropActions) -> None:  # type: ignore[name-defined]
         item = self.currentItem()

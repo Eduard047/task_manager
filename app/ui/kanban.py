@@ -7,7 +7,7 @@ from app.domain.enums import TaskStatus
 from app.domain.filters import TaskFilters
 from app.services.task_service import TaskService
 
-from .widgets import KanbanListWidget, TaskItemWidget
+from .widgets import KanbanListWidget, TaskItemContainer, TaskItemWidget
 
 
 class KanbanDialog(QDialog):
@@ -15,9 +15,10 @@ class KanbanDialog(QDialog):
         super().__init__(parent)
         self.service = service
         self.setWindowTitle("Kanban")
-        self.resize(980, 520)
+        self.resize(1200, 700)
 
         layout = QHBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(12)
 
         self.columns: dict[str, KanbanListWidget] = {}
@@ -43,13 +44,17 @@ class KanbanDialog(QDialog):
         for status_key, list_widget in self.columns.items():
             list_widget.clear()
             tasks = self.service.list_tasks(TaskFilters(filter_key=status_key))
+            task_ids = [task.id for task in tasks if task.id is not None]
+            subtask_titles = self.service.get_subtask_titles(task_ids)
             for task in tasks:
                 item = QListWidgetItem()
                 list_widget.addItem(item)
                 item.setData(Qt.UserRole, task.id)
-                widget = TaskItemWidget(task)
-                item.setSizeHint(QSize(0, widget.sizeHint().height()))
+                task_widget = TaskItemWidget(task, subtask_titles.get(task.id))
+                widget = TaskItemContainer(task_widget)
+                item.setSizeHint(widget.sizeHint())
                 list_widget.setItemWidget(item, widget)
+            list_widget.sync_item_sizes()
 
     def on_drop_status(self, task_id: int, status_key: str) -> None:
         self.service.update_task(task_id, {"status": status_key})

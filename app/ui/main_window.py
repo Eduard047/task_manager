@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QAbstractSpinBox,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QSpinBox,
     QSplitter,
@@ -29,7 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.config import SETTINGS
-from app.domain.entities import TaskEntity
+from app.domain.entities import SubtaskEntity, TaskEntity
 from app.domain.enums import RecurrenceRule, TaskStatus
 from app.domain.filters import TaskFilters
 from app.infra.repository import TaskRepository
@@ -41,6 +42,8 @@ from .widgets import (
     FilterListWidget,
     PRIORITY_OPTIONS,
     STATUS_LABELS,
+    SubtaskItemWidget,
+    TaskItemContainer,
     TaskItemWidget,
     TaskListWidget,
 )
@@ -107,7 +110,8 @@ class MainWindow(QWidget):
         splitter.addWidget(self.detail)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 2)
-        splitter.setStretchFactor(2, 1)
+        splitter.setStretchFactor(2, 2)
+        splitter.setSizes([240, 620, 420])
 
         self.current_task_id: int | None = None
         self.current_filter = "all"
@@ -261,9 +265,20 @@ class MainWindow(QWidget):
     def _build_detail_panel(self) -> QWidget:
         frame = QFrame()
         frame.setObjectName("DetailPanel")
-        layout = QVBoxLayout(frame)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
+        frame_layout = QVBoxLayout(frame)
+        frame_layout.setContentsMargins(0, 0, 0, 0)
+        frame_layout.setSpacing(0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setObjectName("DetailScroll")
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(12, 12, 12, 12)
+        content_layout.setSpacing(8)
 
         title = QLabel("Деталі")
         title.setProperty("class", "panel-title")
@@ -276,6 +291,44 @@ class MainWindow(QWidget):
         self.description_input.setPlaceholderText("Опис, чекліст, контекст")
         self.description_input.setMinimumHeight(120)
         self.description_input.setMaximumHeight(140)
+
+        subtasks_label = QLabel("Підзадачі")
+        subtasks_label.setProperty("class", "section-title")
+
+        self.subtasks_summary = QLabel("0/0")
+        self.subtasks_summary.setProperty("class", "stats")
+
+        subtasks_header = QHBoxLayout()
+        subtasks_header.addWidget(subtasks_label)
+        subtasks_header.addStretch()
+        subtasks_header.addWidget(self.subtasks_summary)
+
+        self.subtask_input = QLineEdit()
+        self.subtask_input.setPlaceholderText("Додати підзадачу")
+        self.subtask_input.returnPressed.connect(self.add_subtask)
+
+        self.subtask_add_button = QPushButton("Додати")
+        self.subtask_add_button.setProperty("variant", "secondary")
+        self.subtask_add_button.clicked.connect(self.add_subtask)
+
+        subtask_row = QHBoxLayout()
+        subtask_row.addWidget(self.subtask_input, 1)
+        subtask_row.addWidget(self.subtask_add_button)
+
+        self.subtasks_scroll = QScrollArea()
+        self.subtasks_scroll.setWidgetResizable(True)
+        self.subtasks_scroll.setFrameShape(QFrame.NoFrame)
+        self.subtasks_scroll.setObjectName("SubtasksScroll")
+        self.subtasks_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        self.subtasks_container = QWidget()
+        self.subtasks_layout = QVBoxLayout(self.subtasks_container)
+        self.subtasks_layout.setContentsMargins(0, 0, 0, 0)
+        self.subtasks_layout.setSpacing(6)
+        self.subtasks_layout.addStretch()
+        self.subtasks_scroll.setWidget(self.subtasks_container)
+        self.subtasks_scroll.setMinimumHeight(110)
+        self.subtasks_scroll.setMaximumHeight(160)
 
         self.status_combo = QComboBox()
         for label, key in STATUS_OPTIONS:
@@ -335,30 +388,34 @@ class MainWindow(QWidget):
         self.delete_button.setProperty("variant", "danger")
         self.delete_button.clicked.connect(self.delete_task)
 
-        layout.addWidget(title)
-        layout.addWidget(self.title_input)
-        layout.addWidget(self.description_input)
+        content_layout.addWidget(title)
+        content_layout.addWidget(self.title_input)
+        content_layout.addWidget(self.description_input)
 
-        layout.addSpacing(6)
+        content_layout.addSpacing(6)
+        content_layout.addLayout(subtasks_header)
+        content_layout.addLayout(subtask_row)
+        content_layout.addWidget(self.subtasks_scroll)
+        content_layout.addSpacing(6)
 
-        layout.addWidget(QLabel("Статус"))
-        layout.addWidget(self.status_combo)
+        content_layout.addWidget(QLabel("Статус"))
+        content_layout.addWidget(self.status_combo)
 
-        layout.addWidget(QLabel("Пріоритет"))
-        layout.addWidget(self.priority_combo)
+        content_layout.addWidget(QLabel("Пріоритет"))
+        content_layout.addWidget(self.priority_combo)
 
-        layout.addWidget(QLabel("Теги"))
-        layout.addWidget(self.tags_input)
+        content_layout.addWidget(QLabel("Теги"))
+        content_layout.addWidget(self.tags_input)
 
-        layout.addWidget(self.due_toggle)
-        layout.addWidget(self.due_input)
+        content_layout.addWidget(self.due_toggle)
+        content_layout.addWidget(self.due_input)
 
-        layout.addWidget(recurrence_title)
-        layout.addWidget(self.recurrence_combo)
-        layout.addWidget(QLabel("Інтервал"))
-        layout.addWidget(self.recurrence_interval)
-        layout.addWidget(self.recurrence_end_check)
-        layout.addWidget(self.recurrence_end_date)
+        content_layout.addWidget(recurrence_title)
+        content_layout.addWidget(self.recurrence_combo)
+        content_layout.addWidget(QLabel("Інтервал"))
+        content_layout.addWidget(self.recurrence_interval)
+        content_layout.addWidget(self.recurrence_end_check)
+        content_layout.addWidget(self.recurrence_end_date)
 
         actions = QHBoxLayout()
         actions.setSpacing(8)
@@ -368,9 +425,12 @@ class MainWindow(QWidget):
         actions.addWidget(self.save_button, 1)
         actions.addWidget(self.done_button, 1)
         actions.addWidget(self.archive_button, 1)
-        layout.addLayout(actions)
-        layout.addWidget(self.delete_button)
-        layout.addStretch()
+        content_layout.addLayout(actions)
+        content_layout.addWidget(self.delete_button)
+        content_layout.addStretch()
+
+        scroll.setWidget(content)
+        frame_layout.addWidget(scroll)
 
         return frame
 
@@ -382,15 +442,18 @@ class MainWindow(QWidget):
             due_on=self.due_on,
         )
         tasks = self.service.list_tasks(filters)
+        task_ids = [task.id for task in tasks if task.id is not None]
+        subtask_titles = self.service.get_subtask_titles(task_ids)
         self.task_list.clear()
 
         for task in tasks:
             item = QListWidgetItem()
             item.setData(Qt.UserRole, task.id)
-            widget = TaskItemWidget(task)
-            item.setSizeHint(QSize(0, widget.sizeHint().height()))
+            task_widget = TaskItemWidget(task, subtask_titles.get(task.id))
+            widget = TaskItemContainer(task_widget)
             self.task_list.addItem(item)
             self.task_list.setItemWidget(item, widget)
+            item.setSizeHint(widget.sizeHint())
 
         self.task_list.set_reorder_enabled(self.current_filter in REORDER_FILTERS)
 
@@ -406,6 +469,7 @@ class MainWindow(QWidget):
         else:
             self.current_task_id = None
             self.clear_form()
+        self.task_list.sync_item_sizes()
 
     def on_filter_change(self, current: QListWidgetItem) -> None:
         if not current:
@@ -433,14 +497,28 @@ class MainWindow(QWidget):
         self.due_on = None
         self.refresh_tasks()
 
-    def on_task_selected(self, current: QListWidgetItem) -> None:
+    def on_task_selected(
+        self,
+        current: QListWidgetItem,
+        previous: QListWidgetItem | None = None,
+    ) -> None:
+        if previous:
+            self._set_task_item_selected(previous, False)
         if not current:
             return
+        self._set_task_item_selected(current, True)
         task_id = current.data(Qt.UserRole)
         task = self._get_task_from_list(task_id)
         if task:
             self.current_task_id = task.id
             self.populate_form(task)
+
+    def _set_task_item_selected(self, item: QListWidgetItem, selected: bool) -> None:
+        widget = self.task_list.itemWidget(item)
+        if isinstance(widget, TaskItemWidget):
+            widget.set_selected(selected)
+        elif hasattr(widget, "set_selected"):
+            widget.set_selected(selected)
 
     def _get_task_from_list(self, task_id: int) -> TaskEntity | None:
         for index in range(self.task_list.count()):
@@ -448,6 +526,8 @@ class MainWindow(QWidget):
             if item.data(Qt.UserRole) == task_id:
                 widget = self.task_list.itemWidget(item)
                 if isinstance(widget, TaskItemWidget):
+                    return widget.task
+                if hasattr(widget, "task"):
                     return widget.task
         return None
 
@@ -490,6 +570,78 @@ class MainWindow(QWidget):
             self.recurrence_end_date.setEnabled(False)
 
         self._sync_done_button(task)
+        self._set_subtasks_enabled(True)
+        if task.id is not None:
+            self.refresh_subtasks(task.id)
+
+    def refresh_subtasks(self, task_id: int) -> None:
+        subtasks = self.service.list_subtasks(task_id)
+        self._render_subtasks(subtasks)
+
+    def add_subtask(self) -> None:
+        title = self.subtask_input.text().strip()
+        if not title:
+            return
+        if self.current_task_id is None:
+            self.save_task()
+        if self.current_task_id is None:
+            QMessageBox.warning(self, "Потрібна задача", "Спочатку збережи задачу.")
+            return
+        try:
+            self.service.create_subtask(self.current_task_id, title)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, "Помилка", f"Не вдалося додати підзадачу.\n{exc}")
+            return
+        self.subtask_input.clear()
+        self.refresh_subtasks(self.current_task_id)
+
+    def on_subtask_toggle(self, subtask_id: int, is_done: bool) -> None:
+        self.service.update_subtask(subtask_id, {"is_done": is_done})
+        if self.current_task_id is not None:
+            self.refresh_subtasks(self.current_task_id)
+
+    def on_subtask_title_update(self, subtask_id: int, title: str) -> None:
+        self.service.update_subtask(subtask_id, {"title": title})
+        if self.current_task_id is not None:
+            self.refresh_subtasks(self.current_task_id)
+
+    def on_subtask_delete(self, subtask_id: int) -> None:
+        self.service.delete_subtask(subtask_id)
+        if self.current_task_id is not None:
+            self.refresh_subtasks(self.current_task_id)
+
+    def _render_subtasks(self, subtasks: list[SubtaskEntity]) -> None:
+        self._clear_subtasks()
+        for subtask in subtasks:
+            widget = SubtaskItemWidget(
+                subtask,
+                self.on_subtask_toggle,
+                self.on_subtask_title_update,
+                self.on_subtask_delete,
+            )
+            self.subtasks_layout.insertWidget(self.subtasks_layout.count() - 1, widget)
+        self._update_subtask_summary(subtasks)
+        self.subtasks_scroll.setVisible(bool(subtasks))
+
+    def _clear_subtasks(self) -> None:
+        while self.subtasks_layout.count() > 1:
+            item = self.subtasks_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+
+    def _update_subtask_summary(self, subtasks: list[SubtaskEntity]) -> None:
+        total = len(subtasks)
+        done = sum(1 for subtask in subtasks if subtask.is_done)
+        if total:
+            self.subtasks_summary.setText(f"{done}/{total}")
+        else:
+            self.subtasks_summary.setText("0/0")
+
+    def _set_subtasks_enabled(self, enabled: bool) -> None:
+        self.subtask_input.setEnabled(enabled)
+        self.subtask_add_button.setEnabled(enabled)
+        self.subtasks_scroll.setEnabled(enabled)
 
     def clear_form(self) -> None:
         self.title_input.clear()
@@ -506,6 +658,8 @@ class MainWindow(QWidget):
         self.recurrence_end_date.setEnabled(False)
         self.recurrence_end_date.setDate(QDate.currentDate())
         self._sync_done_button(None)
+        self._render_subtasks([])
+        self._set_subtasks_enabled(True)
 
     def _sync_done_button(self, task: TaskEntity | None) -> None:
         if task is None:

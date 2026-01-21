@@ -443,26 +443,56 @@ QPushButton[variant="danger"]:pressed {
   border: none;
 }
 
-#TaskList::item, #KanbanList::item {
-  margin-bottom: 12px;
-}
-
 #TaskList::item {
-  background: #1B2230;
-  border: 1px solid #2B3647;
-  border-radius: 14px;
-  padding: 6px;
+  margin: 0px 0px 16px 0px;
+  background: transparent;
+  border: none;
+  padding: 0px;
 }
 
-#TaskList::item:selected {
-  border: 1px solid #3B82F6;
-  background: #233149;
+#TaskList::item:selected,
+#TaskList::item:focus {
+  background: transparent;
+  border: none;
+}
+
+#KanbanList::item {
+  margin-bottom: 16px;
+}
+
+#KanbanList::item:selected,
+#KanbanList::item:focus {
+  background: transparent;
+  border: none;
 }
 
 #TaskCard {
   background: #1B2230;
   border: 1px solid #2B3647;
   border-radius: 14px;
+}
+
+#TaskCard[selected="true"] {
+  border: 1px solid #3B82F6;
+  background: #233149;
+}
+
+#SubtasksScroll {
+  background: transparent;
+  border: none;
+}
+
+#SubtasksScroll QWidget#qt_scrollarea_viewport {
+  background: transparent;
+}
+
+#DetailScroll {
+  background: transparent;
+  border: none;
+}
+
+#DetailScroll QWidget#qt_scrollarea_viewport {
+  background: transparent;
 }
 
 #KanbanList {

@@ -5,12 +5,12 @@ from typing import Optional
 
 from sqlalchemy import func, or_, select
 
-from app.domain.entities import TaskEntity
+from app.domain.entities import SubtaskEntity, TaskEntity
 from app.domain.filters import TaskFilters
 from app.domain.enums import TaskStatus
 
 from .db import SessionLocal
-from .models import TaskModel
+from .models import SubtaskModel, TaskModel
 
 STATUS_DONE = TaskStatus.DONE.value
 STATUS_ARCHIVED = TaskStatus.ARCHIVED.value
@@ -32,6 +32,18 @@ def _to_entity(model: TaskModel) -> TaskEntity:
         recurrence_interval=model.recurrence_interval,
         recurrence_end_date=model.recurrence_end_date,
         archived_at=model.archived_at,
+        sort_order=model.sort_order,
+    )
+
+
+def _to_subtask_entity(model: SubtaskModel) -> SubtaskEntity:
+    return SubtaskEntity(
+        id=model.id,
+        task_id=model.task_id,
+        title=model.title,
+        is_done=model.is_done,
+        created_at=model.created_at,
+        updated_at=model.updated_at,
         sort_order=model.sort_order,
     )
 
@@ -107,6 +119,73 @@ class TaskRepository:
             session.refresh(task)
             return _to_entity(task)
 
+    def list_subtasks(self, task_id: int) -> list[SubtaskEntity]:
+        with SessionLocal() as session:
+            stmt = (
+                select(SubtaskModel)
+                .where(SubtaskModel.task_id == task_id)
+                .order_by(
+                    SubtaskModel.sort_order.asc(),
+                    SubtaskModel.created_at.asc(),
+                )
+            )
+            return [_to_subtask_entity(subtask) for subtask in session.scalars(stmt)]
+
+    def get_subtask_titles(self, task_ids: list[int]) -> dict[int, list[str]]:
+        if not task_ids:
+            return {}
+        with SessionLocal() as session:
+            stmt = (
+                select(SubtaskModel.task_id, SubtaskModel.title)
+                .where(SubtaskModel.task_id.in_(task_ids))
+                .order_by(
+                    SubtaskModel.task_id.asc(),
+                    SubtaskModel.sort_order.asc(),
+                    SubtaskModel.created_at.asc(),
+                )
+            )
+            titles: dict[int, list[str]] = {}
+            for row in session.execute(stmt):
+                title = (row.title or "").strip()
+                if not title:
+                    continue
+                titles.setdefault(int(row.task_id), []).append(title)
+            return titles
+
+    def create_subtask(self, task_id: int, title: str) -> SubtaskEntity:
+        with SessionLocal() as session:
+            sort_order = self._next_subtask_sort_order(session, task_id)
+            subtask = SubtaskModel(
+                task_id=task_id,
+                title=title,
+                is_done=False,
+                sort_order=sort_order,
+            )
+            session.add(subtask)
+            session.commit()
+            session.refresh(subtask)
+            return _to_subtask_entity(subtask)
+
+    def update_subtask(self, subtask_id: int, data: dict) -> Optional[SubtaskEntity]:
+        with SessionLocal() as session:
+            subtask = session.get(SubtaskModel, subtask_id)
+            if not subtask:
+                return None
+
+            for key, value in data.items():
+                setattr(subtask, key, value)
+            session.commit()
+            session.refresh(subtask)
+            return _to_subtask_entity(subtask)
+
+    def delete_subtask(self, subtask_id: int) -> None:
+        with SessionLocal() as session:
+            subtask = session.get(SubtaskModel, subtask_id)
+            if not subtask:
+                return
+            session.delete(subtask)
+            session.commit()
+
     def update_task(self, task_id: int, data: dict) -> Optional[TaskEntity]:
         with SessionLocal() as session:
             task = session.get(TaskModel, task_id)
@@ -142,6 +221,9 @@ class TaskRepository:
             task = session.get(TaskModel, task_id)
             if not task:
                 return
+            session.query(SubtaskModel).filter(SubtaskModel.task_id == task_id).delete(
+                synchronize_session=False
+            )
             session.delete(task)
             session.commit()
 
@@ -241,5 +323,12 @@ class TaskRepository:
     def _next_sort_order(session, status: str) -> int:
         max_order = session.scalar(
             select(func.max(TaskModel.sort_order)).where(TaskModel.status == status)
+        )
+        return (max_order or 0) + 1
+
+    @staticmethod
+    def _next_subtask_sort_order(session, task_id: int) -> int:
+        max_order = session.scalar(
+            select(func.max(SubtaskModel.sort_order)).where(SubtaskModel.task_id == task_id)
         )
         return (max_order or 0) + 1

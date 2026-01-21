@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
-from app.domain.entities import TaskEntity
+from app.domain.entities import SubtaskEntity, TaskEntity
 from app.domain.enums import RecurrenceRule, TaskStatus
 from app.domain.filters import TaskFilters
 from app.infra.repository import TaskRepository
@@ -33,6 +33,21 @@ class TaskService:
         if status and status != TaskStatus.ARCHIVED.value:
             normalized["archived_at"] = None
         return self._repo.update_task(task_id, normalized)
+
+    def list_subtasks(self, task_id: int) -> list[SubtaskEntity]:
+        return self._repo.list_subtasks(task_id)
+
+    def get_subtask_titles(self, task_ids: list[int]) -> dict[int, list[str]]:
+        return self._repo.get_subtask_titles(task_ids)
+
+    def create_subtask(self, task_id: int, title: str) -> SubtaskEntity:
+        return self._repo.create_subtask(task_id, title)
+
+    def update_subtask(self, subtask_id: int, data: dict) -> SubtaskEntity | None:
+        return self._repo.update_subtask(subtask_id, data)
+
+    def delete_subtask(self, subtask_id: int) -> None:
+        self._repo.delete_subtask(subtask_id)
 
     def delete_task(self, task_id: int) -> None:
         self._repo.delete_task(task_id)
